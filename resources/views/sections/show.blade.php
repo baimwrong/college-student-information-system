@@ -91,9 +91,13 @@
                 @forelse($section->enrollments as $enr)
                     <tr>
                         <td>
-                            <a href="{{ route('students.show', $enr->student) }}" class="fw-bold text-decoration-none">
-                                {{ $enr->student->student_id ?? 'N/A' }}
-                            </a>
+                            @if(auth()->user()->isAdmin() || auth()->user()->isStaff())
+                                <a href="{{ route('students.show', $enr->student) }}" class="fw-bold text-decoration-none">
+                                    {{ $enr->student->student_id ?? 'N/A' }}
+                                </a>
+                            @else
+                                <span class="fw-bold">{{ $enr->student->student_id ?? 'N/A' }}</span>
+                            @endif
                         </td>
                         <td>{{ $enr->student->full_name ?? 'N/A' }}</td>
                         <td><small class="badge bg-light text-dark border">{{ $enr->student->program->code ?? 'N/A' }}</small></td>
@@ -112,13 +116,17 @@
                             @endif
                         </td>
                         <td class="text-end">
-                            <form method="POST" action="{{ route('enrollments.destroy', $enr) }}" class="d-inline" onsubmit="return confirm('Drop this student from section?');">
-                                @csrf
-                                @method('DELETE')
-                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Drop Enrollment">
-                                    <i class="bi bi-person-dash"></i> Drop
-                                </button>
-                            </form>
+                            @if(auth()->user()->isAdmin() || auth()->user()->isStaff())
+                                <form method="POST" action="{{ route('enrollments.destroy', $enr) }}" class="d-inline" onsubmit="return confirm('Drop this student from section?');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Drop Enrollment">
+                                        <i class="bi bi-person-dash"></i> Drop
+                                    </button>
+                                </form>
+                            @else
+                                <span class="badge bg-light text-secondary border">Registered</span>
+                            @endif
                         </td>
                     </tr>
                 @empty

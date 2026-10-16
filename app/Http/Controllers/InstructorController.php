@@ -42,6 +42,7 @@ class InstructorController extends Controller
     public function create()
     {
         $departments = Department::where('status', 'active')->get();
+
         return view('instructors.create', compact('departments'));
     }
 
@@ -84,22 +85,24 @@ class InstructorController extends Controller
     public function show(Instructor $instructor)
     {
         $instructor->load(['department', 'courseSections.course', 'courseSections.term', 'courseSections.classroom']);
+
         return view('instructors.show', compact('instructor'));
     }
 
     public function edit(Instructor $instructor)
     {
         $departments = Department::where('status', 'active')->get();
+
         return view('instructors.edit', compact('instructor', 'departments'));
     }
 
     public function update(Request $request, Instructor $instructor)
     {
         $validated = $request->validate([
-            'employee_id' => ['required', 'string', 'max:30', 'unique:instructors,employee_id,' . $instructor->id],
+            'employee_id' => ['required', 'string', 'max:30', 'unique:instructors,employee_id,'.$instructor->id],
             'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
-            'email' => ['required', 'email', 'max:150', 'unique:instructors,email,' . $instructor->id, 'unique:users,email,' . ($instructor->user_id ?? 0)],
+            'email' => ['required', 'email', 'max:150', 'unique:instructors,email,'.$instructor->id, 'unique:users,email,'.($instructor->user_id ?? 0)],
             'phone' => ['nullable', 'string', 'max:30'],
             'department_id' => ['required', 'exists:departments,id'],
             'designation' => ['required', 'string', 'max:100'],

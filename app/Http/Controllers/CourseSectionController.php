@@ -13,7 +13,20 @@ class CourseSectionController extends Controller
 {
     public function index(Request $request)
     {
+        $user = $request->user();
         $query = CourseSection::with(['course.department', 'term', 'instructor', 'classroom']);
+
+        // If instructor, only show assigned sections
+        if ($user && $user->isInstructor()) {
+            $instructor = $user->instructor ?? Instructor::where('email', $user->email)->first();
+            if ($instructor) {
+                $query->where('instructor_id', $instructor->id);
+            } else {
+                $query->whereRaw('1 = 0');
+            }
+        } elseif ($request->filled('instructor_id')) {
+            $query->where('instructor_id', $request->instructor_id);
+        }
 
         if ($request->filled('term_id')) {
             $query->where('term_id', $request->term_id);
@@ -26,10 +39,6 @@ class CourseSectionController extends Controller
 
         if ($request->filled('course_id')) {
             $query->where('course_id', $request->course_id);
-        }
-
-        if ($request->filled('instructor_id')) {
-            $query->where('instructor_id', $request->instructor_id);
         }
 
         $sections = $query->latest()->paginate(10)->withQueryString();
@@ -76,19 +85,36 @@ class CourseSectionController extends Controller
             ]);
         }
 
+        $conflictError = $this->validateScheduleConflicts($validated);
+        if ($conflictError) {
+            return back()->withInput()->withErrors([
+                'day_of_week' => $conflictError,
+            ]);
+        }
+
         CourseSection::create($validated);
 
         return redirect()->route('sections.index')->with('success', 'Class section scheduled successfully.');
     }
 
-    public function show(CourseSection $section)
+    public function show(CourseSection $section, Request $request)
     {
+        $user = $request->user();
+
+        // If instructor, only allow viewing assigned section
+        if ($user && $user->isInstructor()) {
+            $instructor = $user->instructor ?? Instructor::where('email', $user->email)->first();
+            if (! $instructor || $section->instructor_id !== $instructor->id) {
+                abort(403, 'Unauthorized to view this course section.');
+            }
+        }
+
         $section->load([
             'course.department',
             'term',
             'instructor',
             'classroom',
-            'enrollments.student.program'
+            'enrollments.student.program',
         ]);
 
         return view('sections.show', compact('section'));
@@ -131,6 +157,13 @@ class CourseSectionController extends Controller
             ]);
         }
 
+        $conflictError = $this->validateScheduleConflicts($validated, $section->id);
+        if ($conflictError) {
+            return back()->withInput()->withErrors([
+                'day_of_week' => $conflictError,
+            ]);
+        }
+
         $section->update($validated);
 
         return redirect()->route('sections.index')->with('success', 'Class section updated successfully.');
@@ -143,6 +176,91 @@ class CourseSectionController extends Controller
         }
 
         $section->delete();
+
         return redirect()->route('sections.index')->with('success', 'Class section deleted successfully.');
+    }
+
+    /**
+     * Validate room and instructor schedule conflicts and classroom capacity.
+     */
+    private function validateScheduleConflicts(array $validated, ?int $ignoreSectionId = null): ?string
+    {
+        // 1. Time range check
+        if (! empty($validated['start_time']) && ! empty($validated['end_time'])) {
+            if ($validated['start_time'] >= $validated['end_time']) {
+                return 'Class section end time must be after the start time.';
+            }
+        }
+
+        // 2. Classroom capacity check
+        if (! empty($validated['classroom_id'])) {
+            $classroom = Classroom::find($validated['classroom_id']);
+            if ($classroom && $validated['capacity'] > $classroom->capacity) {
+                return "Section capacity ({$validated['capacity']}) exceeds the maximum capacity of room {$classroom->room_number} ({$classroom->capacity} seats).";
+            }
+        }
+
+        // 3. Collision checks (Classroom & Instructor)
+        if (! empty($validated['day_of_week']) && ! empty($validated['start_time']) && ! empty($validated['end_time'])) {
+            $inputDays = array_filter(array_map('trim', explode(',', str_replace(['/', '&'], ',', $validated['day_of_week']))));
+
+            // Check classroom collision
+            if (! empty($validated['classroom_id'])) {
+                $cQuery = CourseSection::where('term_id', $validated['term_id'])
+                    ->where('classroom_id', $validated['classroom_id'])
+                    ->where('status', '!=', 'cancelled')
+                    ->whereNotNull('day_of_week')
+                    ->whereNotNull('start_time')
+                    ->whereNotNull('end_time');
+
+                if ($ignoreSectionId) {
+                    $cQuery->where('id', '!=', $ignoreSectionId);
+                }
+
+                $existingSections = $cQuery->with(['course', 'classroom'])->get();
+                foreach ($existingSections as $existing) {
+                    $existingDays = array_filter(array_map('trim', explode(',', str_replace(['/', '&'], ',', $existing->day_of_week))));
+                    $hasCommonDay = ! empty(array_intersect(array_map('strtolower', $inputDays), array_map('strtolower', $existingDays)));
+
+                    if ($hasCommonDay) {
+                        if ($validated['start_time'] < $existing->end_time && $validated['end_time'] > $existing->start_time) {
+                            $roomName = $existing->classroom->room_number ?? 'Room';
+
+                            return "Classroom scheduling conflict: {$roomName} is already reserved by {$existing->course->code} ({$existing->section_number}) on {$existing->day_of_week} ({$existing->start_time} - {$existing->end_time}).";
+                        }
+                    }
+                }
+            }
+
+            // Check instructor collision
+            if (! empty($validated['instructor_id'])) {
+                $iQuery = CourseSection::where('term_id', $validated['term_id'])
+                    ->where('instructor_id', $validated['instructor_id'])
+                    ->where('status', '!=', 'cancelled')
+                    ->whereNotNull('day_of_week')
+                    ->whereNotNull('start_time')
+                    ->whereNotNull('end_time');
+
+                if ($ignoreSectionId) {
+                    $iQuery->where('id', '!=', $ignoreSectionId);
+                }
+
+                $existingSections = $iQuery->with(['course', 'instructor'])->get();
+                foreach ($existingSections as $existing) {
+                    $existingDays = array_filter(array_map('trim', explode(',', str_replace(['/', '&'], ',', $existing->day_of_week))));
+                    $hasCommonDay = ! empty(array_intersect(array_map('strtolower', $inputDays), array_map('strtolower', $existingDays)));
+
+                    if ($hasCommonDay) {
+                        if ($validated['start_time'] < $existing->end_time && $validated['end_time'] > $existing->start_time) {
+                            $instructorName = $existing->instructor->full_name ?? 'Instructor';
+
+                            return "Faculty scheduling conflict: {$instructorName} is already assigned to teach {$existing->course->code} ({$existing->section_number}) on {$existing->day_of_week} ({$existing->start_time} - {$existing->end_time}).";
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 }

@@ -7,17 +7,28 @@
     <div>
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb mb-1">
-                <li class="breadcrumb-item"><a href="{{ route('students.index') }}">Students</a></li>
-                <li class="breadcrumb-item"><a href="{{ route('students.show', $student) }}">{{ $student->student_id }}</a></li>
-                <li class="breadcrumb-item active" aria-current="page">Official Transcript</li>
+                @if(auth()->user()->isStudent())
+                    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Official Transcript</li>
+                @else
+                    <li class="breadcrumb-item"><a href="{{ route('students.index') }}">Students</a></li>
+                    <li class="breadcrumb-item"><a href="{{ route('students.show', $student) }}">{{ $student->student_id }}</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Official Transcript</li>
+                @endif
             </ol>
         </nav>
         <h3 class="fw-bold mb-0">Official Student Academic Transcript</h3>
     </div>
     <div class="d-flex gap-2">
-        <a href="{{ route('students.show', $student) }}" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left me-1"></i> Back
-        </a>
+        @if(auth()->user()->isStudent())
+            <a href="{{ route('dashboard') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i> Back to Dashboard
+            </a>
+        @else
+            <a href="{{ route('students.show', $student) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i> Back
+            </a>
+        @endif
         <button type="button" class="btn btn-primary fw-semibold" onclick="window.print()">
             <i class="bi bi-printer-fill me-1"></i> Print / Save as PDF
         </button>

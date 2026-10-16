@@ -70,6 +70,7 @@ class User extends Authenticatable
         if (is_string($roles)) {
             $roles = explode(',', $roles);
         }
+
         return in_array($this->role, $roles, true);
     }
 }

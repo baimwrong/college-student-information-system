@@ -74,16 +74,41 @@ class Student extends Model
     public function recalculateGpa(): void
     {
         $publishedEnrollments = $this->enrollments()
-            ->with('courseSection.course')
+            ->with(['courseSection.course', 'term'])
             ->where('grade_status', 'published')
             ->whereNotNull('grade_point')
             ->get();
+
+        // Group enrollments by course_id to handle course retakes (latest attempt policy)
+        $courseEnrollments = [];
+        foreach ($publishedEnrollments as $enrollment) {
+            $courseId = $enrollment->courseSection->course_id ?? null;
+            if (! $courseId) {
+                continue;
+            }
+
+            if (! isset($courseEnrollments[$courseId])) {
+                $courseEnrollments[$courseId] = $enrollment;
+            } else {
+                $existing = $courseEnrollments[$courseId];
+                $existingDate = $existing->term->start_date ?? null;
+                $currentDate = $enrollment->term->start_date ?? null;
+
+                if ($currentDate && $existingDate) {
+                    if ($currentDate > $existingDate || ($currentDate == $existingDate && $enrollment->id > $existing->id)) {
+                        $courseEnrollments[$courseId] = $enrollment;
+                    }
+                } elseif ($enrollment->id > $existing->id) {
+                    $courseEnrollments[$courseId] = $enrollment;
+                }
+            }
+        }
 
         $totalPoints = 0;
         $totalCredits = 0;
         $earnedCredits = 0;
 
-        foreach ($publishedEnrollments as $enrollment) {
+        foreach ($courseEnrollments as $enrollment) {
             $credits = $enrollment->courseSection->course->credits ?? 0;
             if ($credits > 0) {
                 $totalPoints += ($enrollment->grade_point * $credits);

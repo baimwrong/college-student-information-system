@@ -10,6 +10,7 @@ class AcademicTermController extends Controller
     public function index()
     {
         $terms = AcademicTerm::withCount(['courseSections', 'enrollments'])->latest('start_date')->paginate(10);
+
         return view('terms.index', compact('terms'));
     }
 
@@ -40,7 +41,7 @@ class AcademicTermController extends Controller
     public function update(Request $request, AcademicTerm $term)
     {
         $validated = $request->validate([
-            'code' => ['required', 'string', 'max:30', 'unique:academic_terms,code,' . $term->id],
+            'code' => ['required', 'string', 'max:30', 'unique:academic_terms,code,'.$term->id],
             'name' => ['required', 'string', 'max:255'],
             'academic_year' => ['required', 'string', 'max:20'],
             'start_date' => ['required', 'date'],
@@ -68,6 +69,7 @@ class AcademicTermController extends Controller
         }
 
         $term->delete();
+
         return redirect()->route('terms.index')->with('success', 'Academic term deleted successfully.');
     }
 }

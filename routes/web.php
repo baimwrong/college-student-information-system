@@ -40,8 +40,20 @@ Route::middleware('auth')->group(function () {
     Route::get('/students/{student}/transcript', [StudentController::class, 'transcript'])->name('students.transcript');
 
     // Grading Sheet (Admins, Staff, and assigned Instructor)
-    Route::get('/sections/{section}/grades', [EnrollmentController::class, 'gradeSheet'])->name('sections.grades');
-    Route::post('/sections/{section}/grades', [EnrollmentController::class, 'saveGradeSheet'])->name('sections.grades.save');
+    Route::get('/sections/{section}/grades', [EnrollmentController::class, 'gradeSheet'])
+        ->name('sections.grades')
+        ->middleware('role:admin,staff,instructor');
+    Route::post('/sections/{section}/grades', [EnrollmentController::class, 'saveGradeSheet'])
+        ->name('sections.grades.save')
+        ->middleware('role:admin,staff,instructor');
+
+    // Class Sections / Timetable Viewing (Admins, Staff, and Instructors)
+    Route::get('/sections', [CourseSectionController::class, 'index'])
+        ->name('sections.index')
+        ->middleware('role:admin,staff,instructor');
+    Route::get('/sections/{section}', [CourseSectionController::class, 'show'])
+        ->name('sections.show')
+        ->middleware('role:admin,staff,instructor');
 
     // Admin & Staff Management Routes
     Route::middleware('role:admin,staff')->group(function () {
@@ -73,8 +85,8 @@ Route::middleware('auth')->group(function () {
         // Courses Curriculum Catalog
         Route::resource('courses', CourseController::class);
 
-        // Class Sections / Timetable
-        Route::resource('sections', CourseSectionController::class);
+        // Class Sections / Timetable Management (Create, Edit, Update, Destroy)
+        Route::resource('sections', CourseSectionController::class)->except(['index', 'show']);
 
         // Enrollments
         Route::get('/enrollments', [EnrollmentController::class, 'index'])->name('enrollments.index');

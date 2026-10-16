@@ -65,9 +65,10 @@ class CourseSection extends Model
 
     public function getScheduleSummaryAttribute(): string
     {
-        if (!$this->day_of_week && !$this->start_time) {
+        if (! $this->day_of_week && ! $this->start_time) {
             return 'TBA';
         }
+
         return "{$this->day_of_week} ({$this->start_time} - {$this->end_time})";
     }
 }

@@ -37,6 +37,7 @@ class CourseController extends Controller
     public function create()
     {
         $departments = Department::where('status', 'active')->get();
+
         return view('courses.create', compact('departments'));
     }
 
@@ -63,12 +64,14 @@ class CourseController extends Controller
     public function show(Course $course)
     {
         $course->load(['department', 'sections.term', 'sections.instructor', 'sections.classroom']);
+
         return view('courses.show', compact('course'));
     }
 
     public function edit(Course $course)
     {
         $departments = Department::where('status', 'active')->get();
+
         return view('courses.edit', compact('course', 'departments'));
     }
 
@@ -76,7 +79,7 @@ class CourseController extends Controller
     {
         $validated = $request->validate([
             'department_id' => ['required', 'exists:departments,id'],
-            'code' => ['required', 'string', 'max:30', 'unique:courses,code,' . $course->id],
+            'code' => ['required', 'string', 'max:30', 'unique:courses,code,'.$course->id],
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'credits' => ['required', 'integer', 'min:1', 'max:12'],
@@ -99,6 +102,7 @@ class CourseController extends Controller
         }
 
         $course->delete();
+
         return redirect()->route('courses.index')->with('success', 'Course deleted successfully.');
     }
 }

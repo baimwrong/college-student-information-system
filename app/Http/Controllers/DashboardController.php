@@ -73,7 +73,7 @@ class DashboardController extends Controller
             if ($instructor) {
                 $sections = CourseSection::with(['course', 'term', 'classroom'])
                     ->where('instructor_id', $instructor->id)
-                    ->when($currentTerm, fn($q) => $q->where('term_id', $currentTerm->id))
+                    ->when($currentTerm, fn ($q) => $q->where('term_id', $currentTerm->id))
                     ->get();
 
                 $sectionIds = CourseSection::where('instructor_id', $instructor->id)->pluck('id');
@@ -100,7 +100,7 @@ class DashboardController extends Controller
         if ($student) {
             $enrolledCourses = Enrollment::with(['courseSection.course', 'courseSection.instructor', 'courseSection.classroom'])
                 ->where('student_id', $student->id)
-                ->when($currentTerm, fn($q) => $q->where('term_id', $currentTerm->id))
+                ->when($currentTerm, fn ($q) => $q->where('term_id', $currentTerm->id))
                 ->get();
         }
 

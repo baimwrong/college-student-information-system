@@ -7,6 +7,7 @@ use App\Models\Department;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -49,6 +50,7 @@ class StudentController extends Controller
     {
         $departments = Department::where('status', 'active')->get();
         $programs = AcademicProgram::where('status', 'active')->get();
+
         return view('students.create', compact('departments', 'programs'));
     }
 
@@ -99,11 +101,11 @@ class StudentController extends Controller
             'program',
             'enrollments.courseSection.course',
             'enrollments.courseSection.instructor',
-            'enrollments.term'
+            'enrollments.term',
         ]);
 
         // Group enrollments by term
-        $enrollmentsByTerm = $student->enrollments->groupBy(fn($item) => $item->term->name ?? 'Unknown Term');
+        $enrollmentsByTerm = $student->enrollments->groupBy(fn ($item) => $item->term->name ?? 'Unknown Term');
 
         return view('students.show', compact('student', 'enrollmentsByTerm'));
     }
@@ -112,16 +114,17 @@ class StudentController extends Controller
     {
         $departments = Department::where('status', 'active')->get();
         $programs = AcademicProgram::where('status', 'active')->get();
+
         return view('students.edit', compact('student', 'departments', 'programs'));
     }
 
     public function update(Request $request, Student $student)
     {
         $validated = $request->validate([
-            'student_id' => ['required', 'string', 'max:30', 'unique:students,student_id,' . $student->id],
+            'student_id' => ['required', 'string', 'max:30', 'unique:students,student_id,'.$student->id],
             'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
-            'email' => ['required', 'email', 'max:150', 'unique:students,email,' . $student->id, 'unique:users,email,' . ($student->user_id ?? 0)],
+            'email' => ['required', 'email', 'max:150', 'unique:students,email,'.$student->id, 'unique:users,email,'.($student->user_id ?? 0)],
             'phone' => ['nullable', 'string', 'max:30'],
             'department_id' => ['required', 'exists:departments,id'],
             'program_id' => ['required', 'exists:academic_programs,id'],
@@ -153,16 +156,28 @@ class StudentController extends Controller
 
     public function transcript(Student $student)
     {
+        $user = Auth::user();
+
+        // Enforce authorization: Admin, Staff, or the student themselves
+        if ($user->isStudent()) {
+            $studentProfile = $user->student ?? Student::where('email', $user->email)->first();
+            if (! $studentProfile || $studentProfile->id !== $student->id) {
+                abort(403, 'Unauthorized. You may only view your own academic transcript.');
+            }
+        } elseif (! $user->isAdmin() && ! $user->isStaff()) {
+            abort(403, 'Unauthorized to view this student transcript.');
+        }
+
         $student->load([
             'department',
             'program',
             'enrollments.courseSection.course',
-            'enrollments.term'
+            'enrollments.term',
         ]);
 
         // Group enrollments by term
         $termsData = $student->enrollments
-            ->groupBy(fn($item) => $item->term->id ?? 0)
+            ->groupBy(fn ($item) => $item->term->id ?? 0)
             ->map(function ($enrollments) {
                 $term = $enrollments->first()->term ?? null;
                 $termCredits = 0;

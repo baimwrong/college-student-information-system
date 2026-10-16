@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\AcademicTerm;
+use App\Models\Course;
 use App\Models\CourseSection;
 use App\Models\Enrollment;
+use App\Models\Instructor;
 use App\Models\Student;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -47,7 +49,7 @@ class EnrollmentController extends Controller
     {
         $currentTerm = AcademicTerm::current()->first() ?? AcademicTerm::latest()->first();
         $sections = CourseSection::with(['course', 'term', 'instructor'])
-            ->when($currentTerm, fn($q) => $q->where('term_id', $currentTerm->id))
+            ->when($currentTerm, fn ($q) => $q->where('term_id', $currentTerm->id))
             ->where('status', 'open')
             ->get();
         $students = Student::where('academic_status', 'active')->orderBy('first_name')->get();
@@ -65,10 +67,31 @@ class EnrollmentController extends Controller
         $section = CourseSection::with('course')->findOrFail($validated['course_section_id']);
         $student = Student::findOrFail($validated['student_id']);
 
+        // Check course prerequisites
+        if (! empty($section->course->prerequisites)) {
+            $prereqCodes = array_filter(array_map('trim', explode(',', $section->course->prerequisites)));
+            foreach ($prereqCodes as $pCode) {
+                $prereqCourse = Course::where('code', $pCode)->first();
+                if ($prereqCourse) {
+                    $hasPassed = Enrollment::where('student_id', $student->id)
+                        ->where('grade_status', 'published')
+                        ->where('grade_point', '>', 0)
+                        ->whereHas('courseSection', fn ($q) => $q->where('course_id', $prereqCourse->id))
+                        ->exists();
+
+                    if (! $hasPassed) {
+                        return back()->withInput()->withErrors([
+                            'course_section_id' => "Student {$student->student_id} has not completed the prerequisite course {$pCode} ({$prereqCourse->title}).",
+                        ]);
+                    }
+                }
+            }
+        }
+
         // Check if student already enrolled in this section or in another section of the same course in this term
         $alreadyEnrolledSameCourse = Enrollment::where('student_id', $student->id)
             ->where('term_id', $section->term_id)
-            ->whereHas('courseSection', fn($q) => $q->where('course_id', $section->course_id))
+            ->whereHas('courseSection', fn ($q) => $q->where('course_id', $section->course_id))
             ->exists();
 
         if ($alreadyEnrolledSameCourse) {
@@ -127,10 +150,12 @@ class EnrollmentController extends Controller
 
         // Check authorization: Admin, Staff, or the assigned instructor
         if ($user->isInstructor()) {
-            $instructor = $user->instructor;
-            if (!$instructor || $section->instructor_id !== $instructor->id) {
+            $instructor = $user->instructor ?? Instructor::where('email', $user->email)->first();
+            if (! $instructor || $section->instructor_id !== $instructor->id) {
                 abort(403, 'Unauthorized to grade this course section.');
             }
+        } elseif (! $user->isAdmin() && ! $user->isStaff()) {
+            abort(403, 'Unauthorized to grade this course section.');
         }
 
         $section->load([
@@ -138,7 +163,7 @@ class EnrollmentController extends Controller
             'term',
             'instructor',
             'classroom',
-            'enrollments.student.program'
+            'enrollments.student.program',
         ]);
 
         return view('enrollments.grades', compact('section'));
@@ -152,10 +177,12 @@ class EnrollmentController extends Controller
         $user = Auth::user();
 
         if ($user->isInstructor()) {
-            $instructor = $user->instructor;
-            if (!$instructor || $section->instructor_id !== $instructor->id) {
+            $instructor = $user->instructor ?? Instructor::where('email', $user->email)->first();
+            if (! $instructor || $section->instructor_id !== $instructor->id) {
                 abort(403, 'Unauthorized to grade this course section.');
             }
+        } elseif (! $user->isAdmin() && ! $user->isStaff()) {
+            abort(403, 'Unauthorized to grade this course section.');
         }
 
         $validated = $request->validate([
@@ -174,15 +201,22 @@ class EnrollmentController extends Controller
             foreach ($validated['grades'] as $gradeRow) {
                 $enrollment = Enrollment::find($gradeRow['enrollment_id']);
                 if ($enrollment) {
+                    $wasPublished = $enrollment->grade_status === 'published';
+                    $newStatus = $gradeRow['grade_status'];
+                    $isNowPublished = $newStatus === 'published';
+
                     $enrollment->assignments_score = $gradeRow['assignments_score'] ?? null;
                     $enrollment->midterm_score = $gradeRow['midterm_score'] ?? null;
                     $enrollment->final_score = $gradeRow['final_score'] ?? null;
-                    $enrollment->grade_status = $gradeRow['grade_status'];
+                    $enrollment->grade_status = $newStatus;
                     $enrollment->remarks = $gradeRow['remarks'] ?? null;
 
-                    $enrollment->computeGrade(true);
+                    // Compute grade numbers without triggering auto recalculation per row
+                    $enrollment->computeGrade(false);
+                    $enrollment->save();
 
-                    if ($enrollment->student_id && $enrollment->grade_status === 'published') {
+                    // If grade status was published or is now published, recalculate CGPA
+                    if ($enrollment->student_id && ($wasPublished || $isNowPublished)) {
                         $studentsToRecalculate[$enrollment->student_id] = true;
                     }
                 }

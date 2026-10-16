@@ -10,6 +10,7 @@ class DepartmentController extends Controller
     public function index()
     {
         $departments = Department::withCount(['programs', 'instructors', 'students', 'courses'])->latest()->paginate(10);
+
         return view('departments.index', compact('departments'));
     }
 
@@ -44,7 +45,7 @@ class DepartmentController extends Controller
     public function update(Request $request, Department $department)
     {
         $validated = $request->validate([
-            'code' => ['required', 'string', 'max:20', 'unique:departments,code,' . $department->id],
+            'code' => ['required', 'string', 'max:20', 'unique:departments,code,'.$department->id],
             'name' => ['required', 'string', 'max:255'],
             'faculty_name' => ['nullable', 'string', 'max:255'],
             'head_of_department' => ['nullable', 'string', 'max:255'],
@@ -66,6 +67,7 @@ class DepartmentController extends Controller
         }
 
         $department->delete();
+
         return redirect()->route('departments.index')->with('success', 'Department deleted successfully.');
     }
 }

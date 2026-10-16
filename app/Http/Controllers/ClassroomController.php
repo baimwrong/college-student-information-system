@@ -10,6 +10,7 @@ class ClassroomController extends Controller
     public function index()
     {
         $classrooms = Classroom::withCount('courseSections')->latest()->paginate(10);
+
         return view('classrooms.index', compact('classrooms'));
     }
 
@@ -31,7 +32,7 @@ class ClassroomController extends Controller
     public function update(Request $request, Classroom $classroom)
     {
         $validated = $request->validate([
-            'room_number' => ['required', 'string', 'max:50', 'unique:classrooms,room_number,' . $classroom->id],
+            'room_number' => ['required', 'string', 'max:50', 'unique:classrooms,room_number,'.$classroom->id],
             'building' => ['required', 'string', 'max:100'],
             'capacity' => ['required', 'integer', 'min:1', 'max:500'],
             'type' => ['required', 'in:lecture_hall,lab,seminar,auditorium'],
@@ -50,6 +51,7 @@ class ClassroomController extends Controller
         }
 
         $classroom->delete();
+
         return redirect()->route('classrooms.index')->with('success', 'Classroom deleted successfully.');
     }
 }

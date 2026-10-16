@@ -125,18 +125,19 @@ class BulkImportController extends Controller
         }
 
         $handle = fopen($filePath, 'r');
-        if (!$handle) {
+        if (! $handle) {
             return back()->with('error', 'Unable to open the uploaded file.');
         }
 
         $headerRow = fgetcsv($handle, 0, $detectedDelimiter);
-        if (!$headerRow) {
+        if (! $headerRow) {
             fclose($handle);
+
             return back()->with('error', 'CSV file appears to be empty.');
         }
 
         // Clean headers
-        $headers = array_map(fn($h) => strtolower(trim($h)), $headerRow);
+        $headers = array_map(fn ($h) => strtolower(trim($h)), $headerRow);
 
         $totalRows = 0;
         $importedRows = 0;
@@ -147,11 +148,13 @@ class BulkImportController extends Controller
 
         $rowNumber = 1;
 
+        $affectedStudentIds = [];
+
         while (($data = fgetcsv($handle, 0, $detectedDelimiter)) !== false) {
             $rowNumber++;
 
             // Skip empty rows
-            if (empty(array_filter($data, fn($v) => trim($v) !== ''))) {
+            if (empty(array_filter($data, fn ($v) => trim($v) !== ''))) {
                 continue;
             }
 
@@ -161,13 +164,14 @@ class BulkImportController extends Controller
                 $failedRows++;
                 $errors[] = [
                     'row' => $rowNumber,
-                    'error' => 'Column count mismatch. Expected ' . count($headers) . ' columns, found ' . count($data),
+                    'error' => 'Column count mismatch. Expected '.count($headers).' columns, found '.count($data),
                 ];
+
                 continue;
             }
 
             $row = array_combine($headers, array_slice($data, 0, count($headers)));
-            $row = array_map(fn($val) => trim($val), $row);
+            $row = array_map(fn ($val) => trim($val), $row);
 
             try {
                 switch ($type) {
@@ -181,7 +185,7 @@ class BulkImportController extends Controller
                         $res = $this->importCourseRow($row, $onDuplicate);
                         break;
                     case 'enrollments':
-                        $res = $this->importEnrollmentRow($row, $onDuplicate);
+                        $res = $this->importEnrollmentRow($row, $onDuplicate, $affectedStudentIds);
                         break;
                     default:
                         throw new \Exception('Unsupported import entity type.');
@@ -205,6 +209,16 @@ class BulkImportController extends Controller
 
         fclose($handle);
 
+        // Batch recalculate CGPA once for all affected students in enrollment imports
+        if ($type === 'enrollments' && ! empty($affectedStudentIds)) {
+            foreach (array_keys($affectedStudentIds) as $stId) {
+                $st = Student::find($stId);
+                if ($st) {
+                    $st->recalculateGpa();
+                }
+            }
+        }
+
         $status = 'completed';
         if ($failedRows > 0) {
             $status = ($importedRows > 0 || $updatedRows > 0) ? 'partially_failed' : 'failed';
@@ -220,7 +234,7 @@ class BulkImportController extends Controller
             'skipped_rows' => $skippedRows,
             'failed_rows' => $failedRows,
             'status' => $status,
-            'errors' => !empty($errors) ? array_slice($errors, 0, 50) : null, // keep up to 50 detailed errors
+            'errors' => ! empty($errors) ? array_slice($errors, 0, 50) : null, // keep up to 50 detailed errors
         ]);
 
         $summary = "Bulk import processed: {$importedRows} imported, {$updatedRows} updated, {$skippedRows} skipped, {$failedRows} failed.";
@@ -239,17 +253,17 @@ class BulkImportController extends Controller
         }
 
         $department = Department::where('code', $row['department_code'] ?? '')->first();
-        if (!$department) {
+        if (! $department) {
             throw new \Exception("Department code '{$row['department_code']}' does not exist.");
         }
 
         $program = AcademicProgram::where('code', $row['program_code'] ?? '')
             ->where('department_id', $department->id)
             ->first();
-        if (!$program) {
+        if (! $program) {
             $program = AcademicProgram::where('code', $row['program_code'] ?? '')->first();
         }
-        if (!$program) {
+        if (! $program) {
             throw new \Exception("Academic Program code '{$row['program_code']}' does not exist.");
         }
 
@@ -326,7 +340,7 @@ class BulkImportController extends Controller
         }
 
         $department = Department::where('code', $row['department_code'] ?? '')->first();
-        if (!$department) {
+        if (! $department) {
             throw new \Exception("Department code '{$row['department_code']}' does not exist.");
         }
 
@@ -398,7 +412,7 @@ class BulkImportController extends Controller
         }
 
         $department = Department::where('code', $row['department_code'])->first();
-        if (!$department) {
+        if (! $department) {
             throw new \Exception("Department code '{$row['department_code']}' does not exist.");
         }
 
@@ -439,28 +453,28 @@ class BulkImportController extends Controller
         return 'imported';
     }
 
-    private function importEnrollmentRow(array $row, string $onDuplicate): string
+    private function importEnrollmentRow(array $row, string $onDuplicate, array &$affectedStudentIds = []): string
     {
         if (empty($row['student_id']) || empty($row['course_code']) || empty($row['term_code'])) {
             throw new \Exception('Missing required fields: student_id, course_code, or term_code.');
         }
 
         $student = Student::where('student_id', $row['student_id'])->first();
-        if (!$student) {
+        if (! $student) {
             throw new \Exception("Student ID '{$row['student_id']}' does not exist.");
         }
 
         $course = Course::where('code', $row['course_code'])->first();
-        if (!$course) {
+        if (! $course) {
             throw new \Exception("Course code '{$row['course_code']}' does not exist.");
         }
 
         $term = AcademicTerm::where('code', $row['term_code'])->first();
-        if (!$term) {
+        if (! $term) {
             throw new \Exception("Term code '{$row['term_code']}' does not exist.");
         }
 
-        $sectionNumber = !empty($row['section_number']) ? $row['section_number'] : 'SEC-A';
+        $sectionNumber = ! empty($row['section_number']) ? $row['section_number'] : 'SEC-A';
 
         // Find or create course section
         $section = CourseSection::firstOrCreate(
@@ -494,8 +508,9 @@ class BulkImportController extends Controller
             $existing->final_score = $final ?? $existing->final_score;
             $existing->assignments_score = $assignments ?? $existing->assignments_score;
             $existing->grade_status = $gradeStatus;
-            $existing->computeGrade(true);
-            $student->recalculateGpa();
+            $existing->computeGrade(false);
+            $existing->save();
+            $affectedStudentIds[$student->id] = true;
 
             return 'updated';
         }
@@ -512,20 +527,21 @@ class BulkImportController extends Controller
         ]);
 
         $section->increment('enrolled_count');
-        $enrollment->computeGrade(true);
-        $student->recalculateGpa();
+        $enrollment->computeGrade(false);
+        $enrollment->save();
+        $affectedStudentIds[$student->id] = true;
 
         return 'imported';
     }
 
     /**
-     * Export data to CSV
+     * Export data to CSV with formula injection sanitization (CWE-1236)
      */
     public function export(string $type): StreamedResponse
     {
         $headers = [
             'Content-Type' => 'text/csv',
-            'Content-Disposition' => "attachment; filename=\"export_{$type}_" . date('Ymd_His') . ".csv\"",
+            'Content-Disposition' => "attachment; filename=\"export_{$type}_".date('Ymd_His').'.csv"',
         ];
 
         $callback = function () use ($type) {
@@ -535,7 +551,7 @@ class BulkImportController extends Controller
                 fputcsv($handle, ['student_id', 'first_name', 'last_name', 'email', 'phone', 'department_code', 'program_code', 'admission_date', 'gender', 'current_semester', 'academic_status', 'cgpa', 'total_credits_earned']);
                 Student::with(['department', 'program'])->chunk(100, function ($students) use ($handle) {
                     foreach ($students as $s) {
-                        fputcsv($handle, [
+                        fputcsv($handle, $this->sanitizeCsvRow([
                             $s->student_id,
                             $s->first_name,
                             $s->last_name,
@@ -549,14 +565,14 @@ class BulkImportController extends Controller
                             $s->academic_status,
                             $s->cgpa,
                             $s->total_credits_earned,
-                        ]);
+                        ]));
                     }
                 });
             } elseif ($type === 'courses') {
                 fputcsv($handle, ['code', 'title', 'department_code', 'credits', 'level', 'lecture_hours', 'lab_hours', 'prerequisites', 'status']);
                 Course::with('department')->chunk(100, function ($courses) use ($handle) {
                     foreach ($courses as $c) {
-                        fputcsv($handle, [
+                        fputcsv($handle, $this->sanitizeCsvRow([
                             $c->code,
                             $c->title,
                             $c->department->code ?? '',
@@ -566,14 +582,14 @@ class BulkImportController extends Controller
                             $c->lab_hours,
                             $c->prerequisites,
                             $c->status,
-                        ]);
+                        ]));
                     }
                 });
             } elseif ($type === 'instructors') {
                 fputcsv($handle, ['employee_id', 'first_name', 'last_name', 'email', 'phone', 'department_code', 'designation', 'specialization', 'office_room', 'status']);
                 Instructor::with('department')->chunk(100, function ($instructors) use ($handle) {
                     foreach ($instructors as $i) {
-                        fputcsv($handle, [
+                        fputcsv($handle, $this->sanitizeCsvRow([
                             $i->employee_id,
                             $i->first_name,
                             $i->last_name,
@@ -584,7 +600,7 @@ class BulkImportController extends Controller
                             $i->specialization,
                             $i->office_room,
                             $i->status,
-                        ]);
+                        ]));
                     }
                 });
             }
@@ -593,5 +609,20 @@ class BulkImportController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Sanitize CSV cells to prevent Formula Injection (CWE-1236)
+     */
+    private function sanitizeCsvRow(array $row): array
+    {
+        return array_map(function ($val) {
+            $str = (string) ($val ?? '');
+            if ($str !== '' && in_array($str[0], ['=', '+', '-', '@', "\t", "\r"])) {
+                return "'".$str;
+            }
+
+            return $str;
+        }, $row);
     }
 }

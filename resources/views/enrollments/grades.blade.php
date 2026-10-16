@@ -67,7 +67,7 @@
                 </thead>
                 <tbody>
                     @forelse($section->enrollments as $index => $enr)
-                        <tr>
+                        <tr class="grade-row">
                             <td>
                                 <input type="hidden" name="grades[{{ $index }}][enrollment_id]" value="{{ $enr->id }}">
                                 <span class="fw-bold text-dark">{{ $enr->student->student_id ?? 'N/A' }}</span>
@@ -75,19 +75,20 @@
                             <td>
                                 <div class="fw-semibold">{{ $enr->student->full_name ?? 'N/A' }}</div>
                                 @if($enr->letter_grade)
-                                    <small class="badge bg-primary-subtle text-primary border border-primary-subtle">
-                                        Current: {{ $enr->letter_grade }} ({{ number_format($enr->grade_point, 2) }})
+                                    <small class="badge bg-primary-subtle text-primary border border-primary-subtle d-block mt-1">
+                                        Saved: {{ $enr->letter_grade }} ({{ number_format($enr->grade_point, 2) }})
                                     </small>
                                 @endif
+                                <small class="badge bg-success-subtle text-success border border-success-subtle live-preview d-none mt-1"></small>
                             </td>
                             <td>
-                                <input type="number" step="0.01" name="grades[{{ $index }}][assignments_score]" class="form-control form-control-sm text-center" value="{{ old("grades.$index.assignments_score", $enr->assignments_score) }}" placeholder="0 - 100" min="0" max="100">
+                                <input type="number" step="0.01" name="grades[{{ $index }}][assignments_score]" class="form-control form-control-sm text-center score-assignments" value="{{ old("grades.$index.assignments_score", $enr->assignments_score) }}" placeholder="0 - 100" min="0" max="100">
                             </td>
                             <td>
-                                <input type="number" step="0.01" name="grades[{{ $index }}][midterm_score]" class="form-control form-control-sm text-center" value="{{ old("grades.$index.midterm_score", $enr->midterm_score) }}" placeholder="0 - 100" min="0" max="100">
+                                <input type="number" step="0.01" name="grades[{{ $index }}][midterm_score]" class="form-control form-control-sm text-center score-midterm" value="{{ old("grades.$index.midterm_score", $enr->midterm_score) }}" placeholder="0 - 100" min="0" max="100">
                             </td>
                             <td>
-                                <input type="number" step="0.01" name="grades[{{ $index }}][final_score]" class="form-control form-control-sm text-center" value="{{ old("grades.$index.final_score", $enr->final_score) }}" placeholder="0 - 100" min="0" max="100">
+                                <input type="number" step="0.01" name="grades[{{ $index }}][final_score]" class="form-control form-control-sm text-center score-final" value="{{ old("grades.$index.final_score", $enr->final_score) }}" placeholder="0 - 100" min="0" max="100">
                             </td>
                             <td>
                                 <select name="grades[{{ $index }}][grade_status]" class="form-select form-select-sm">
@@ -121,4 +122,50 @@
         @endif
     </div>
 </form>
+@endsection
+
+@section('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    function calculateGrade(assignments, midterm, final) {
+        if (assignments === '' && midterm === '' && final === '') return null;
+        const a = parseFloat(assignments) || 0;
+        const m = parseFloat(midterm) || 0;
+        const f = parseFloat(final) || 0;
+        const total = (a * 0.20) + (m * 0.35) + (f * 0.45);
+        let letter = 'F';
+        let point = '0.00';
+        if (total >= 93) { letter = 'A'; point = '4.00'; }
+        else if (total >= 90) { letter = 'A-'; point = '3.70'; }
+        else if (total >= 87) { letter = 'B+'; point = '3.30'; }
+        else if (total >= 83) { letter = 'B'; point = '3.00'; }
+        else if (total >= 80) { letter = 'B-'; point = '2.70'; }
+        else if (total >= 77) { letter = 'C+'; point = '2.30'; }
+        else if (total >= 73) { letter = 'C'; point = '2.00'; }
+        else if (total >= 70) { letter = 'C-'; point = '1.70'; }
+        else if (total >= 60) { letter = 'D'; point = '1.00'; }
+        return { total: total.toFixed(1), letter: letter, point: point };
+    }
+
+    document.querySelectorAll('.grade-row').forEach(function(row) {
+        const aInput = row.querySelector('.score-assignments');
+        const mInput = row.querySelector('.score-midterm');
+        const fInput = row.querySelector('.score-final');
+        const preview = row.querySelector('.live-preview');
+
+        function update() {
+            if (!aInput || !mInput || !fInput) return;
+            const res = calculateGrade(aInput.value, mInput.value, fInput.value);
+            if (res && preview) {
+                preview.innerHTML = `Live: <strong>${res.total}% (${res.letter} • ${res.point})</strong>`;
+                preview.classList.remove('d-none');
+            }
+        }
+
+        [aInput, mInput, fInput].forEach(inp => {
+            if (inp) inp.addEventListener('input', update);
+        });
+    });
+});
+</script>
 @endsection
