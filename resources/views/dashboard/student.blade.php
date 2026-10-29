@@ -12,9 +12,15 @@
         </p>
     </div>
     @if($student)
-        <div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ route('student.registration') }}" class="btn btn-primary fw-semibold shadow-sm">
+                <i class="bi bi-pencil-square me-1"></i> Register for Courses
+            </a>
+            <a href="{{ route('student.schedule') }}" class="btn btn-outline-secondary fw-semibold shadow-sm">
+                <i class="bi bi-calendar3-week me-1"></i> My Schedule
+            </a>
             <a href="{{ route('students.transcript', $student) }}" class="btn btn-outline-primary fw-semibold shadow-sm">
-                <i class="bi bi-file-earmark-medical me-1"></i> View Official Transcript
+                <i class="bi bi-file-earmark-medical me-1"></i> View Transcript
             </a>
         </div>
     @endif

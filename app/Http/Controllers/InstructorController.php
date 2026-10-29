@@ -64,7 +64,8 @@ class InstructorController extends Controller
         ]);
 
         DB::transaction(function () use ($validated, $request) {
-            $password = $request->filled('password') ? $validated['password'] : 'password123';
+            $hasCustomPassword = $request->filled('password');
+            $password = $hasCustomPassword ? $validated['password'] : 'password123';
 
             $user = User::create([
                 'name' => "{$validated['first_name']} {$validated['last_name']}",
@@ -73,6 +74,7 @@ class InstructorController extends Controller
                 'role' => 'instructor',
                 'phone' => $validated['phone'] ?? null,
                 'status' => $validated['status'] === 'active' ? 'active' : 'inactive',
+                'must_change_password' => ! $hasCustomPassword,
             ]);
 
             $validated['user_id'] = $user->id;

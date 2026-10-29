@@ -13,6 +13,16 @@
             <span class="badge bg-primary text-uppercase px-3 py-2">{{ auth()->user()->role }}</span>
         </div>
 
+        @if(auth()->user()->must_change_password)
+            <div class="alert alert-danger shadow-sm border-danger d-flex align-items-center gap-3 p-3 mb-4 rounded-3" role="alert">
+                <i class="bi bi-exclamation-triangle-fill fs-3 text-danger"></i>
+                <div>
+                    <h6 class="fw-bold mb-1">Mandatory Security Update</h6>
+                    <div class="small">Your account is currently using a temporary or system-generated password. You must update your password below to proceed with using the campus portal.</div>
+                </div>
+            </div>
+        @endif
+
         <!-- Personal Info Card -->
         <div class="card mb-4 shadow-sm">
             <div class="card-header bg-white py-3">

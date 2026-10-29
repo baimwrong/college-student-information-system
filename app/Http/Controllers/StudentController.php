@@ -76,7 +76,8 @@ class StudentController extends Controller
         ]);
 
         DB::transaction(function () use ($validated, $request) {
-            $password = $request->filled('password') ? $validated['password'] : 'password123';
+            $hasCustomPassword = $request->filled('password');
+            $password = $hasCustomPassword ? $validated['password'] : 'password123';
 
             $user = User::create([
                 'name' => "{$validated['first_name']} {$validated['last_name']}",
@@ -85,6 +86,7 @@ class StudentController extends Controller
                 'role' => 'student',
                 'phone' => $validated['phone'] ?? null,
                 'status' => in_array($validated['academic_status'], ['active', 'probation', 'graduated']) ? 'active' : 'inactive',
+                'must_change_password' => ! $hasCustomPassword,
             ]);
 
             $validated['user_id'] = $user->id;
@@ -201,7 +203,63 @@ class StudentController extends Controller
                 ];
             });
 
-        return view('students.transcript', compact('student', 'termsData'));
+        $verificationUrl = route('transcript.verify', $student->transcript_token);
+
+        return view('students.transcript', compact('student', 'termsData', 'verificationUrl'));
+    }
+
+    public function downloadTranscriptPdf(Student $student)
+    {
+        $user = Auth::user();
+
+        // Enforce authorization: Admin, Staff, or the student themselves
+        if ($user->isStudent()) {
+            $studentProfile = $user->student ?? Student::where('email', $user->email)->first();
+            if (! $studentProfile || $studentProfile->id !== $student->id) {
+                abort(403, 'Unauthorized. You may only download your own academic transcript.');
+            }
+        } elseif (! $user->isAdmin() && ! $user->isStaff()) {
+            abort(403, 'Unauthorized to download this student transcript.');
+        }
+
+        $student->load([
+            'department',
+            'program',
+            'enrollments.courseSection.course',
+            'enrollments.term',
+        ]);
+
+        $termsData = $student->enrollments
+            ->groupBy(fn ($item) => $item->term->id ?? 0)
+            ->map(function ($enrollments) {
+                $term = $enrollments->first()->term ?? null;
+                $termCredits = 0;
+                $termPoints = 0;
+
+                foreach ($enrollments as $e) {
+                    if ($e->grade_status === 'published' && $e->grade_point !== null) {
+                        $c = $e->courseSection->course->credits ?? 0;
+                        $termCredits += $c;
+                        $termPoints += ($e->grade_point * $c);
+                    }
+                }
+
+                $sgpa = $termCredits > 0 ? round($termPoints / $termCredits, 2) : 0.00;
+
+                return [
+                    'term' => $term,
+                    'enrollments' => $enrollments,
+                    'credits' => $termCredits,
+                    'sgpa' => $sgpa,
+                ];
+            });
+
+        $verificationUrl = route('transcript.verify', $student->transcript_token);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('students.transcript_pdf', compact('student', 'termsData', 'verificationUrl'))
+            ->setPaper('a4', 'portrait');
+
+        return $pdf->download("Official_Transcript_{$student->student_id}.pdf");
     }
 
     public function destroy(Student $student)

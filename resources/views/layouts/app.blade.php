@@ -337,6 +337,18 @@
             <ul class="sidebar-nav">
                 @if(auth()->user()->student)
                     <li class="nav-item">
+                        <a href="{{ route('student.registration') }}" class="nav-link {{ request()->routeIs('student.registration*') ? 'active' : '' }}">
+                            <i class="bi bi-pencil-square"></i>
+                            <span>Course Registration</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="{{ route('student.schedule') }}" class="nav-link {{ request()->routeIs('student.schedule') ? 'active' : '' }}">
+                            <i class="bi bi-calendar3-week"></i>
+                            <span>My Class Schedule</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a href="{{ route('students.transcript', auth()->user()->student) }}" class="nav-link {{ request()->routeIs('students.transcript') ? 'active' : '' }}">
                             <i class="bi bi-file-earmark-medical"></i>
                             <span>Academic Transcript</span>

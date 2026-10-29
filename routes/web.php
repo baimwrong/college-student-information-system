@@ -11,7 +11,10 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EnrollmentController;
 use App\Http\Controllers\InstructorController;
+use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\StudentController;
+use App\Http\Controllers\StudentRegistrationController;
+use App\Http\Controllers\TranscriptVerificationController;
 use Illuminate\Support\Facades\Route;
 
 // Redirect root to dashboard or login
@@ -19,10 +22,19 @@ Route::get('/', function () {
     return auth()->check() ? redirect()->route('dashboard') : redirect()->route('login');
 });
 
+// Public Transcript Verification Portal
+Route::get('/verify/transcript/{token}', [TranscriptVerificationController::class, 'verify'])->name('transcript.verify');
+
 // Authentication Routes
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
     Route::post('/login', [AuthController::class, 'login']);
+
+    // Password Reset Routes
+    Route::get('/forgot-password', [PasswordResetController::class, 'create'])->name('password.request');
+    Route::post('/forgot-password', [PasswordResetController::class, 'store'])->name('password.email');
+    Route::get('/reset-password/{token}', [PasswordResetController::class, 'edit'])->name('password.reset');
+    Route::post('/reset-password', [PasswordResetController::class, 'update'])->name('password.store');
 });
 
 Route::middleware('auth')->group(function () {
@@ -38,6 +50,7 @@ Route::middleware('auth')->group(function () {
 
     // Student Transcript (Admins, Staff, and the student themselves)
     Route::get('/students/{student}/transcript', [StudentController::class, 'transcript'])->name('students.transcript');
+    Route::get('/students/{student}/transcript/pdf', [StudentController::class, 'downloadTranscriptPdf'])->name('students.transcript.pdf');
 
     // Grading Sheet (Admins, Staff, and assigned Instructor)
     Route::get('/sections/{section}/grades', [EnrollmentController::class, 'gradeSheet'])
@@ -54,6 +67,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/sections/{section}', [CourseSectionController::class, 'show'])
         ->name('sections.show')
         ->middleware('role:admin,staff,instructor');
+
+    // Student Self-Service Portal
+    Route::middleware('role:student')->prefix('student')->name('student.')->group(function () {
+        Route::get('/registration', [StudentRegistrationController::class, 'index'])->name('registration');
+        Route::post('/registration', [StudentRegistrationController::class, 'store'])->name('registration.store');
+        Route::delete('/registration/{enrollment}', [StudentRegistrationController::class, 'destroy'])->name('registration.destroy');
+        Route::get('/schedule', [StudentRegistrationController::class, 'schedule'])->name('schedule');
+    });
 
     // Admin & Staff Management Routes
     Route::middleware('role:admin,staff')->group(function () {

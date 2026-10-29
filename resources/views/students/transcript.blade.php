@@ -29,8 +29,11 @@
                 <i class="bi bi-arrow-left me-1"></i> Back
             </a>
         @endif
-        <button type="button" class="btn btn-primary fw-semibold" onclick="window.print()">
-            <i class="bi bi-printer-fill me-1"></i> Print / Save as PDF
+        <a href="{{ route('students.transcript.pdf', $student) }}" class="btn btn-primary fw-semibold">
+            <i class="bi bi-file-earmark-pdf-fill me-1"></i> Download Official PDF
+        </a>
+        <button type="button" class="btn btn-outline-secondary fw-semibold" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i> Print
         </button>
     </div>
 </div>
@@ -122,9 +125,29 @@
                                     <td class="fw-bold">{{ $enr->courseSection->course->code ?? 'N/A' }}</td>
                                     <td>{{ $enr->courseSection->course->title ?? 'N/A' }}</td>
                                     <td class="text-center">{{ $enr->courseSection->course->credits ?? 0 }}</td>
-                                    <td class="text-center">{{ $enr->total_score !== null ? number_format($enr->total_score, 1) : '-' }}</td>
-                                    <td class="text-center fw-bold">{{ $enr->letter_grade ?? 'In Progress' }}</td>
-                                    <td class="text-center">{{ $enr->grade_point !== null ? number_format($enr->grade_point, 2) : '-' }}</td>
+                                    <td class="text-center">
+                                        @if($enr->grade_status === 'published' && $enr->total_score !== null)
+                                            {{ number_format($enr->total_score, 1) }}
+                                        @else
+                                            <span class="text-muted">-</span>
+                                        @endif
+                                    </td>
+                                    <td class="text-center fw-bold">
+                                        @if($enr->grade_status === 'published' && $enr->letter_grade)
+                                            <span class="badge {{ in_array($enr->letter_grade, ['A', 'A-', 'B+', 'B']) ? 'bg-success-subtle text-success border border-success-subtle' : (in_array($enr->letter_grade, ['C+', 'C', 'C-', 'D']) ? 'bg-warning-subtle text-warning border border-warning-subtle' : 'bg-danger-subtle text-danger border border-danger-subtle') }}">
+                                                {{ $enr->letter_grade }}
+                                            </span>
+                                        @else
+                                            <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">In Progress</span>
+                                        @endif
+                                    </td>
+                                    <td class="text-center">
+                                        @if($enr->grade_status === 'published' && $enr->grade_point !== null)
+                                            {{ number_format($enr->grade_point, 2) }}
+                                        @else
+                                            <span class="text-muted">-</span>
+                                        @endif
+                                    </td>
                                 </tr>
                             @endforeach
                         </tbody>
@@ -146,9 +169,15 @@
         </div>
         <div class="col-md-4 text-center">
             <small class="text-uppercase fw-semibold d-block">Graduation Standing</small>
-            <h3 class="fw-bold mb-0 text-success">
-                {{ $student->total_credits_earned >= ($student->program->total_credits_required ?? 120) ? 'Graduated' : 'In Good Standing' }}
-            </h3>
+            @if($student->academic_status === 'graduated' || ($student->total_credits_earned >= ($student->program->total_credits_required ?? 120) && !in_array($student->academic_status, ['probation', 'suspended'])))
+                <h3 class="fw-bold mb-0 text-success">Graduated</h3>
+            @elseif($student->academic_status === 'probation')
+                <h3 class="fw-bold mb-0 text-warning">Academic Probation</h3>
+            @elseif($student->academic_status === 'suspended')
+                <h3 class="fw-bold mb-0 text-danger">Suspended</h3>
+            @else
+                <h3 class="fw-bold mb-0 text-primary">In Good Standing</h3>
+            @endif
         </div>
     </div>
 
@@ -167,6 +196,22 @@
                 <small class="text-muted d-block text-uppercase fw-semibold" style="font-size: 0.65rem;">Official Seal</small>
                 <i class="bi bi-patch-check-fill text-primary fs-3"></i>
             </div>
+        </div>
+    </div>
+
+    <!-- Tamper-Evident Digital Verification Banner -->
+    <div class="mt-4 p-3 bg-light rounded-3 border border-secondary border-dashed d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-shield-lock-fill text-primary fs-4"></i>
+            <div>
+                <strong class="d-block small text-dark">Tamper-Evident Document Verification</strong>
+                <span class="small text-muted">Security Token: <code class="text-primary fw-bold">{{ $student->transcript_token }}</code></span>
+            </div>
+        </div>
+        <div>
+            <a href="{{ $verificationUrl }}" target="_blank" class="btn btn-sm btn-outline-primary fw-semibold">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Public Verification Portal
+            </a>
         </div>
     </div>
 </div>

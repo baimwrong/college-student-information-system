@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Student extends Model
 {
@@ -30,7 +31,30 @@ class Student extends Model
         'academic_status',
         'cgpa',
         'total_credits_earned',
+        'transcript_token',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Student $student) {
+            if (empty($student->transcript_token)) {
+                $student->transcript_token = 'TR-'.strtoupper(Str::random(10));
+            }
+        });
+    }
+
+    public function getTranscriptTokenAttribute(): string
+    {
+        if (empty($this->attributes['transcript_token'])) {
+            $token = 'TR-'.strtoupper(substr(md5($this->student_id.config('app.key')), 0, 10));
+            $this->attributes['transcript_token'] = $token;
+            if ($this->exists) {
+                $this->saveQuietly();
+            }
+        }
+
+        return $this->attributes['transcript_token'];
+    }
 
     protected function casts(): array
     {

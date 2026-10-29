@@ -88,35 +88,43 @@ class EnrollmentController extends Controller
             }
         }
 
-        // Check if student already enrolled in this section or in another section of the same course in this term
-        $alreadyEnrolledSameCourse = Enrollment::where('student_id', $student->id)
-            ->where('term_id', $section->term_id)
-            ->whereHas('courseSection', fn ($q) => $q->where('course_id', $section->course_id))
-            ->exists();
+        try {
+            DB::transaction(function () use ($student, $validated) {
+                // Pessimistic lock on the section row to eliminate race conditions
+                $section = CourseSection::where('id', $validated['course_section_id'])
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-        if ($alreadyEnrolledSameCourse) {
+                // Check if student already enrolled in this section or another section of the same course in this term
+                $alreadyEnrolledSameCourse = Enrollment::where('student_id', $student->id)
+                    ->where('term_id', $section->term_id)
+                    ->whereHas('courseSection', fn ($q) => $q->where('course_id', $section->course_id))
+                    ->lockForUpdate()
+                    ->exists();
+
+                if ($alreadyEnrolledSameCourse) {
+                    throw new \DomainException('This student is already enrolled in a section of this course for this term.');
+                }
+
+                if ($section->enrolled_count >= $section->capacity) {
+                    throw new \DomainException('This course section is currently at maximum capacity.');
+                }
+
+                Enrollment::create([
+                    'student_id' => $student->id,
+                    'course_section_id' => $section->id,
+                    'term_id' => $section->term_id,
+                    'status' => 'enrolled',
+                    'grade_status' => 'draft',
+                ]);
+
+                $section->increment('enrolled_count');
+            });
+        } catch (\DomainException $e) {
             return back()->withInput()->withErrors([
-                'course_section_id' => 'This student is already enrolled in a section of this course for this term.',
+                'course_section_id' => $e->getMessage(),
             ]);
         }
-
-        if ($section->enrolled_count >= $section->capacity) {
-            return back()->withInput()->withErrors([
-                'course_section_id' => 'This course section is currently at maximum capacity.',
-            ]);
-        }
-
-        DB::transaction(function () use ($student, $section) {
-            Enrollment::create([
-                'student_id' => $student->id,
-                'course_section_id' => $section->id,
-                'term_id' => $section->term_id,
-                'status' => 'enrolled',
-                'grade_status' => 'draft',
-            ]);
-
-            $section->increment('enrolled_count');
-        });
 
         return redirect()->route('enrollments.index')->with('success', 'Student enrolled successfully.');
     }

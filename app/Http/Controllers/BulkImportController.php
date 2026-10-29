@@ -105,16 +105,23 @@ class BulkImportController extends Controller
         $fileName = $file->getClientOriginalName();
         $onDuplicate = $request->input('on_duplicate', 'skip');
 
-        // Detect delimiter
-        $content = file_get_contents($filePath);
-        // Remove UTF-8 BOM if present
-        $bom = pack('H*', 'EFBBBF');
-        $content = preg_replace("/^$bom/", '', $content);
-        file_put_contents($filePath, $content);
+        @set_time_limit(600);
+
+        $handle = fopen($filePath, 'r');
+        if (! $handle) {
+            return back()->with('error', 'Unable to open the uploaded file.');
+        }
+
+        // Detect and strip UTF-8 BOM via stream offset (zero memory footprint)
+        $bom = fread($handle, 3);
+        $offset = ($bom === "\xEF\xBB\xBF") ? 3 : 0;
+        fseek($handle, $offset);
+
+        $firstLine = fgets($handle);
+        fseek($handle, $offset);
 
         $delimiters = [',', ';', "\t"];
         $detectedDelimiter = ',';
-        $firstLine = strtok($content, "\r\n");
         $maxCount = 0;
         foreach ($delimiters as $delim) {
             $count = substr_count($firstLine, $delim);
@@ -122,11 +129,6 @@ class BulkImportController extends Controller
                 $maxCount = $count;
                 $detectedDelimiter = $delim;
             }
-        }
-
-        $handle = fopen($filePath, 'r');
-        if (! $handle) {
-            return back()->with('error', 'Unable to open the uploaded file.');
         }
 
         $headerRow = fgetcsv($handle, 0, $detectedDelimiter);
@@ -147,8 +149,11 @@ class BulkImportController extends Controller
         $errors = [];
 
         $rowNumber = 1;
-
         $affectedStudentIds = [];
+
+        // Preload reference models to avoid thousands of repetitive queries (O(1) lookups)
+        $deptCache = Department::all()->keyBy('code');
+        $progCache = AcademicProgram::all()->keyBy('code');
 
         while (($data = fgetcsv($handle, 0, $detectedDelimiter)) !== false) {
             $rowNumber++;
@@ -176,13 +181,13 @@ class BulkImportController extends Controller
             try {
                 switch ($type) {
                     case 'students':
-                        $res = $this->importStudentRow($row, $onDuplicate);
+                        $res = $this->importStudentRow($row, $onDuplicate, $deptCache, $progCache);
                         break;
                     case 'instructors':
-                        $res = $this->importInstructorRow($row, $onDuplicate);
+                        $res = $this->importInstructorRow($row, $onDuplicate, $deptCache);
                         break;
                     case 'courses':
-                        $res = $this->importCourseRow($row, $onDuplicate);
+                        $res = $this->importCourseRow($row, $onDuplicate, $deptCache);
                         break;
                     case 'enrollments':
                         $res = $this->importEnrollmentRow($row, $onDuplicate, $affectedStudentIds);
@@ -246,25 +251,22 @@ class BulkImportController extends Controller
         return redirect()->route('admin.imports.index')->with('success', $summary);
     }
 
-    private function importStudentRow(array $row, string $onDuplicate): string
+    private function importStudentRow(array $row, string $onDuplicate, $deptCache = null, $progCache = null): string
     {
         if (empty($row['student_id']) || empty($row['email']) || empty($row['first_name']) || empty($row['last_name'])) {
             throw new \Exception('Missing required fields: student_id, first_name, last_name, or email.');
         }
 
-        $department = Department::where('code', $row['department_code'] ?? '')->first();
+        $deptCode = $row['department_code'] ?? '';
+        $department = $deptCache[$deptCode] ?? Department::where('code', $deptCode)->first();
         if (! $department) {
-            throw new \Exception("Department code '{$row['department_code']}' does not exist.");
+            throw new \Exception("Department code '{$deptCode}' does not exist.");
         }
 
-        $program = AcademicProgram::where('code', $row['program_code'] ?? '')
-            ->where('department_id', $department->id)
-            ->first();
+        $progCode = $row['program_code'] ?? '';
+        $program = $progCache[$progCode] ?? AcademicProgram::where('code', $progCode)->first();
         if (! $program) {
-            $program = AcademicProgram::where('code', $row['program_code'] ?? '')->first();
-        }
-        if (! $program) {
-            throw new \Exception("Academic Program code '{$row['program_code']}' does not exist.");
+            throw new \Exception("Academic Program code '{$progCode}' does not exist.");
         }
 
         $existing = Student::where('student_id', $row['student_id'])
@@ -309,6 +311,7 @@ class BulkImportController extends Controller
                     'role' => 'student',
                     'phone' => $row['phone'] ?? null,
                     'status' => 'active',
+                    'must_change_password' => true,
                 ]
             );
 
@@ -333,15 +336,16 @@ class BulkImportController extends Controller
         return 'imported';
     }
 
-    private function importInstructorRow(array $row, string $onDuplicate): string
+    private function importInstructorRow(array $row, string $onDuplicate, $deptCache = null): string
     {
         if (empty($row['employee_id']) || empty($row['email']) || empty($row['first_name']) || empty($row['last_name'])) {
             throw new \Exception('Missing required fields: employee_id, first_name, last_name, or email.');
         }
 
-        $department = Department::where('code', $row['department_code'] ?? '')->first();
+        $deptCode = $row['department_code'] ?? '';
+        $department = $deptCache[$deptCode] ?? Department::where('code', $deptCode)->first();
         if (! $department) {
-            throw new \Exception("Department code '{$row['department_code']}' does not exist.");
+            throw new \Exception("Department code '{$deptCode}' does not exist.");
         }
 
         $existing = Instructor::where('employee_id', $row['employee_id'])
@@ -383,6 +387,7 @@ class BulkImportController extends Controller
                     'role' => 'instructor',
                     'phone' => $row['phone'] ?? null,
                     'status' => 'active',
+                    'must_change_password' => true,
                 ]
             );
 
@@ -405,15 +410,16 @@ class BulkImportController extends Controller
         return 'imported';
     }
 
-    private function importCourseRow(array $row, string $onDuplicate): string
+    private function importCourseRow(array $row, string $onDuplicate, $deptCache = null): string
     {
         if (empty($row['code']) || empty($row['title']) || empty($row['department_code'])) {
             throw new \Exception('Missing required fields: code, title, or department_code.');
         }
 
-        $department = Department::where('code', $row['department_code'])->first();
+        $deptCode = $row['department_code'] ?? '';
+        $department = $deptCache[$deptCode] ?? Department::where('code', $deptCode)->first();
         if (! $department) {
-            throw new \Exception("Department code '{$row['department_code']}' does not exist.");
+            throw new \Exception("Department code '{$deptCode}' does not exist.");
         }
 
         $existing = Course::where('code', $row['code'])->first();
